@@ -1,0 +1,191 @@
+---
+title: "Practical-Machine-Learning-Course-Project"
+author: "Mahendra Kumar lal"
+date: "February 20, 2019"
+output: html_document
+---
+
+## Project Instruction
+
+### Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+### What you should submit
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+### Data
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+### Question
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: 
++ exactly according to the specification (Class A), 
++ throwing the elbows to the front (Class B), 
++ lifting the dumbbell only halfway (Class C), 
++ lowering the dumbbell only halfway (Class D) and 
++ throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+By processing data gathered from accelerometers on the belt, forearm, arm, and dumbell of the participants in a machine learning algorithm, the question is can the appropriate activity quality (class A-E) be predicted?
+
+
+
+## Load Libraries
+
+Loading the desired libraries.
+
+```{r}
+
+library(caret)
+library(rattle)
+library(randomForest)
+library(gbm)
+library(rpart)
+library(e1071)
+```
+
+
+## Input data
+
+Load Train Data
+
+```{r}
+TrainData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),header=TRUE)
+
+```
+
+Load Test Data
+
+```{r}
+TestData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),header=TRUE)
+
+```
+
+Explore the data
+
+```{r}
+dim(TrainData)
+dim(TestData)
+str(TrainData)
+
+```
+
+Removing NA columns and other extraneous columns (First 7 columns describing who took the test and timestamps). It is noticed that some columns contain NA or blank for almost every observation. I am excluding all the columns containing more than 90% NAs. 
+
+```{r}
+# Find NA  Columns to remove 
+ColToRemove<-which(colSums(is.na(TrainData) |TrainData=="")>0.9*dim(TrainData)[1]) 
+# Remove NA columns
+CleanTrainData<- TrainData[,-ColToRemove]
+# Remove first 7 columns
+CleanTrainData<- CleanTrainData[,-c(1:7)]
+dim(CleanTrainData)
+
+# Perform same Operarion on Test Data
+ColToRemove<-which(colSums(is.na(TestData) |TestData=="")>0.9*dim(TestData)[1])
+CleanTestData<-TestData[,-ColToRemove]
+CleanTestData<-CleanTestData[,-c(1,7)]
+dim(CleanTestData)
+str(CleanTestData)
+```
+
+
+After cleaning operation New traing data set has 53 columns
+
+We will now split the CleanTrainData into Training (75%)   and Testing (25%) data sets
+
+```{r  }
+set.seed(54321)
+x<-createDataPartition(CleanTrainData$classe, p=.75, list = FALSE)
+
+Training1<-CleanTrainData[x,]
+Testing1<-CleanTrainData[-x,]
+
+dim(Training1)
+dim(Testing1)
+```
+
+## Evaluation
+
+We will be testing 3 Models
+
++ Classification Tree
++ Random Forest
++ Gradient Boosting Method
+
+### Training With Classification Tree
+
+k-Fold Cross-Validation technique will be used to limit the effect of overfitting and improving efficiency of the model. We will use 5 folds (k=5).
+
+```{r fig.path= "figure/" }
+trCtl<-trainControl(method = "cv" , number = 5)
+model_ctl<-train(classe~.,data = Training1, method = "rpart", trControl=trCtl)
+
+#Print 
+
+fancyRpartPlot(model_ctl$finalModel)
+
+trnPredict<-predict(model_ctl,newdata = Testing1)
+confMtCt<-confusionMatrix(Testing1$classe, trnPredict)
+# Display confusion Matrix and Model accuracy
+confMtCt$table
+```
+
+We can notice that the accuracy of this first model is very low (about 49%). This means that the outcome class will not be predicted very well by the other predictors.
+
+### Train with  Random Forest
+
+```{r fig.path= "figure/" }
+model_RF<-train(classe~., data=Training1, method="rf" , trControl=trCtl, verbose=FALSE)
+print(model_RF)
+plot(model_RF,main="Accuracy of Random forest model by number of predictors")
+trnPredict<-predict(model_RF, newdata = Testing1)
+confMtRF<-confusionMatrix(Testing1$classe, trnPredict)
+confMtRF$table
+confMtRF$overall[1]
+names(model_RF$finalModel)
+model_RF$finalModel$classes
+plot(model_RF$finalModel,main="Model error of Random forest model by number of trees")
+
+#compute Most important Variables
+
+ImpVar<-varImp(model_RF)
+ImpVar
+
+```
+
+With Random Forest we reached 99.36% accuracy.
+
+### Train with Gradient Boosting
+
+```{r fig.path= "figure/" }
+model_GBM <- train(classe~., data=Training1, method="gbm", trControl=trCtl, verbose=FALSE)
+print(model_GBM)
+plot(model_GBM)
+trnPredict<-predict(model_GBM, newdata=Testing1)
+confMtGBM<-confusionMatrix(Testing1$classe, trnPredict)
+confMtGBM$table
+confMtGBM$overall[1]
+
+```
+
+Precicion with 5 folds is 96.6
+
+## Conclusion
+
+It appears that Random Forest Model is the best one. we will use this model to predict the valuse of classe for the test data set.
+
+## Applying the best model to validation Data
+```{r }
+result<-predict(model_RF,newdata = CleanTestData)
+```
+
